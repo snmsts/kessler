@@ -24,20 +24,18 @@
 (defun parse-impl (module)
   (let ((file (or (probe-file (merge-pathnames (format nil "~A.rs"     module) *path*))
                   (probe-file (merge-pathnames (format nil "~A/mod.rs" module) *path*)))))
-    (with-open-file (i file)
-      (loop with impl_
-            with struct_
-            for line = (read-line i nil nil)
-            while line
-            for struct = (nth-value 1 (cl-ppcre:scan-to-strings "pub struct ([^ ]*) {" line))
-            for impl = (nth-value 1 (cl-ppcre:scan-to-strings "^impl ([^ ]*) {$" line))
-            for fn = (nth-value 1 (cl-ppcre:scan-to-strings "^    pub fn ([^<(]+)(<.+>)?\\((.*)\\) (.*){$" line))
-            for val = (cl-ppcre:scan-to-strings "    pub ([^:]*): ([^,]*),$" line)
-            when (equal "}" line) do (setf impl_ nil struct nil)
-            when impl do (setf impl_ (aref impl 0))
-            when struct do (setf struct_ (aref struct 0))
-            when (and struct_ val) collect (parse-val module struct_ val)
-            when fn collect (parse-fn module impl_ fn)))))
+    (loop with impl_
+          with struct_
+          for line in (uiop:read-file-lines file)
+          for struct = (nth-value 1 (cl-ppcre:scan-to-strings "pub struct ([^ ]*) {" line))
+          for impl = (nth-value 1 (cl-ppcre:scan-to-strings "^impl ([^ ]*) {$" line))
+          for fn = (nth-value 1 (cl-ppcre:scan-to-strings "^    pub fn ([^<(]+)(<.+>)?\\((.*)\\) (.*){$" line))
+          for val = (cl-ppcre:scan-to-strings "    pub ([^:]*): ([^,]*),$" line)
+          when (equal "}" line) do (setf impl_ nil struct nil)
+          when impl do (setf impl_ (aref impl 0))
+          when struct do (setf struct_ (aref struct 0))
+          when (and struct_ val) collect (parse-val module struct_ val)
+          when fn collect (parse-fn module impl_ fn))))
 
 (defun list-module-in-dir (symbol dir &key path)
   (let ((file (make-pathname :defaults dir
