@@ -9,11 +9,11 @@
          (import-language (kessler/detect:detect in))
          (in (or (uiop:directory-exists-p (pathname (format nil "~A/" in)))
                  (uiop:file-exists-p (pathname in))))
-         (out (if (uiop:directory-pathname-p out)
-                  out
-                  (format nil "~A~A"
-                          out
-                          (uiop:directory-separator-for-host))))
+         (out (when out (if (uiop:directory-pathname-p out)
+                            out
+                            (format nil "~A~A"
+                                    out
+                                    (uiop:directory-separator-for-host)))))
          (export-language "cl")
          (syntax-tree
            (when import-language

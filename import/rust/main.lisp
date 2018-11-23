@@ -21,12 +21,59 @@
             (and i (aref i 0)))
          ,(aref fn 1)))))
 
+(defun read-file-lines-without-comment (in)
+  (labels ((skip-// (in)
+             (loop for c = (read-char in nil nil)
+                   until (equal c #\Newline)
+                   while c))
+           (skip-/* (in)
+             (loop for l = nil then c
+                   for c = (read-char in nil nil)
+                   when (and (equal c #\*)
+                              (equal l #\/))
+                   do (skip-/* in)
+                   until (and (equal c #\/)
+                             (equal l #\*))
+                   while c))
+           (skip-string (in)
+             (loop for c = (read-char in nil nil)
+                   when (equal c #\\)
+                   do (setf c (read-char in nil nil))
+                   until (or (null c)
+                             (equal c #\")))))
+    (etypecase in
+      ((or string pathname)
+       (with-open-file (i in)
+         (read-file-lines-without-comment i)))
+      (stream
+       (loop with tmp
+             for c = (read-char in nil nil)
+             while c
+             do (push c tmp)
+             when (equal c #\Newline)
+             collect (prog1 (coerce (reverse (cdr tmp)) 'string)
+                       (setf tmp nil))
+             when (equal c #\")
+             do (progn
+                  (skip-string in)
+                  (push #\" tmp))
+             when (and (equal (second tmp) #\/)
+                       (equal c #\/))
+             collect (prog1 (coerce (reverse (cddr tmp)) 'string)
+                       (setf tmp nil)
+                       (skip-// in))
+             when (and (equal (second tmp) #\/)
+                       (equal c #\*))
+             do (progn
+                  (setf tmp (cddr tmp))
+                  (skip-/* in)))))))
+
 (defun parse-impl (module)
   (let ((file (or (probe-file (merge-pathnames (format nil "~A.rs"     module) *path*))
                   (probe-file (merge-pathnames (format nil "~A/mod.rs" module) *path*)))))
     (loop with impl_
           with struct_
-          for line in (uiop:read-file-lines file)
+          for line in (read-file-lines-without-comment file)
           for struct = (nth-value 1 (cl-ppcre:scan-to-strings "pub struct ([^ ]*) {" line))
           for impl = (nth-value 1 (cl-ppcre:scan-to-strings "^impl ([^ ]*) {$" line))
           for fn = (nth-value 1 (cl-ppcre:scan-to-strings "^    pub fn ([^<(]+)(<.+>)?\\((.*)\\) (.*){$" line))
@@ -46,13 +93,15 @@
         (list-module-files (merge-pathnames (format nil "~A/mod.rs" symbol) dir) :path path))))
 
 (defun parse-line-mod (line)
-  (and (find #\; line)
-       (let ((parsed (remove "" (uiop:split-string line :separator '(#\Space #\tab #\;))
-                             :test #'equal)))
-         (and (find "mod" parsed :test 'equal)
-              (if (find "pub" parsed :test 'equal)
-                  (first (last parsed))
-                  :not)))))
+  (when line
+    (or
+     (and (find #\; line)
+          (let ((parsed (remove "" (uiop:split-string line :separator '(#\Space #\tab #\;))
+                                :test #'equal)))
+            (and (find "mod" parsed :test 'equal)
+                 (find "pub" parsed :test 'equal)
+                 (first (last parsed)))))
+     :not)))
 
 (defun list-module-files (file &key path)
   (with-open-file (in file)
